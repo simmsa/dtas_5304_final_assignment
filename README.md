@@ -1,6 +1,6 @@
 # Compilation
 
-Install <https:://quarto.com>
+Install [Quarto](https://www.quarto.org)
 
 Install `pandas`
 
