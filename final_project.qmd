@@ -1,0 +1,429 @@
+---
+title: "Final Project"
+subtitle: "DTSA 5304: Fundamentals of Data Visualization"
+author:
+  - name: Andrew Simms
+    email: andrew.simms@colorado.edu
+    affiliations:
+      - name: University of Colorado Boulder
+date: "2022-12-05"
+
+format:
+    html:
+        theme:
+            - custom.scss
+        mainfont: "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen,Ubuntu,Cantarell,Fira Sans,Droid Sans,Helvetica Neue,sans-serif"
+        html-math-method: katex
+        fig-width: 8
+        fig-height: 6
+        toc: true
+        toc-location: left
+---
+
+# Introduction
+
+Finding a place to live is a challenge. There is a constant stream of real
+estate listings, but is there an optimal method for narrowing down listings that
+match a users preferences. This document presents a data visualization strategy
+that ultimately results in a customizable map that plots houses based on
+multiple values set by the user. This document focuses on houses in the Denver
+Colorado Metropolitan area as this is where the author currently lives.
+
+# Data
+
+As this project is open ended, I wanted to find a data set that is relevant to one of my goals
+in life, owning a house. As I continue to save money for a down payment, I have been working with a
+real estate agent to pass on listing that I may be interested. But I also want to put my data
+science skills to work. This meant finding a source of real estate listing data for further
+analysis. I began searching online, but found only paid solutions that were not only expensive, but
+not transparent in what data was available. I then found this article: [How to Scrape Zillow Real
+Estate Property Data in Python](https://scrapfly.io/blog/how-to-scrape-zillow/) and was able to
+successfully download real estate listings by city into `json`.
+
+From the top down, data is scrapped from <https://zillow.com> using the
+`GetSearchResults` API. At this time, we pull data from 216 zip codes in the Denver Metropolitan
+Area. These results are stored in one monolithic `json`. We then use `python` to iterate over each data entry
+and normalize into a `csv` file. During this process we eliminate a small amount of listings that
+have formatting or other issues. This file is then saved for further processing.
+
+To begin our visualization we read the `csv` file into a `pandas` DataFrame is the code block below:
+
+```{python}
+
+import pandas as pd
+import altair as alt
+
+fname = "real_estate_data.csv"
+df = pd.read_csv(fname)
+df.head()
+```
+
+At a high level, this data provides information on the location, price, and size of residential real
+estate listings.
+
+## Exploration
+
+To begin our data visualization project we need to figure out what data we have first. Below we calculate the number of listings included in this dataset:
+
+```{python}
+len(df)
+```
+
+This is greater than the 5000 point data limit of Altair, so we need to find ways to reduce or
+filter the data. We know the data can be sorted by listing, but how many values are associated with
+each type:
+
+```{python}
+def count_by_type(input_df, type_str):
+    listing_types = input_df[type_str].unique()
+    listing_types_count = {}
+    for t in listing_types:
+        listing_types_count[t] = len(df[df[type_str] == t])
+    return dict(sorted(listing_types_count.items(), key=lambda item: item[1], reverse=True))
+
+count_by_type(df, "home_type")
+```
+
+## Filtering
+
+Right now we have too many results to process in Altair so we need to filter our data set. We can
+first remove listings that are not types of residences:
+
+```{python}
+relevant_home_types = ["SINGLE_FAMILY", "CONDO", "TOWNHOUSE"]
+df = df[df['home_type'].isin(relevant_home_types)]
+count_by_type(df, "home_type")
+```
+
+This is still too many listings, so maybe we can narrow down the cities that we want to live in.
+This is subjective, and some cities are included because they have a large number of listings to
+analyze. Now do we have an adequate size of data to perform our vizualization?
+
+```{python}
+relevant_cities = ["Denver", "Wheat Ridge", "Arvada", "Boulder", "Lakewood", "Westminster",
+                "Golden", "Thornton", "Arvada", "Broomfield", "Lafayette", "Superior", "Aurora",
+                "Littleton", "Parker", "Castle Rock", "Longmont", "Centennial"]
+df = df[df['city'].isin(relevant_cities)]
+count_by_type(df, "home_type")
+
+```
+
+# Goals
+
+Now that we have a sufficient dataset we should set goals about what insights our visualization
+should allow the user to discover. Initially we should think of the user as a technical
+person with a familiarity of the real estate market. As our skills with data visualization grow, we
+can provide visualizations that cater to a broader set of the population
+
+## Price Information
+
+The first and most obvious limitation when purchasing real estate is the price. Ideally we would
+like to visualize price in a way that gives the user a sense of what homes nearby are valued. This
+data should be broken into smaller categories, possible city or zip code, to compare against other
+areas. Any visualizations
+that relate to price should first be filtered by the maximum price the user can afford. The ultimate
+end goal of the user may to be find a city, or zip code that matches their ideal price, or it may be
+to find a listing that is cheaper than others in in the local area. The goal of our visualization is
+to provide comparable price information for different areas and shows the similarities and
+differences. `price`, `zestimate`, `tax_assesed_value`, and `sqft` provide this information and
+visualizations should start with these attributes
+
+## Location Information
+
+Another important factor in real estate is location. What goals may the user have with regards to
+location? They may want to live in a certain city or area. Within a certain area they may be looking
+for other attributes. Other users may have other factors that are more important than location. The
+goal of our location visualization should be to provide accurate locations and display them in such
+a way that they can be customized. The columns `lat` and `lng` provide GPS (Global Positioning
+        System) coordinates and can be
+used for plotting locations. `zip_code` and `city` can be used to filter the data to relevant areas.
+
+## Listing Description Information
+
+A user may have a requirement of a minimum number of bathrooms or bedroom, or other filters that
+they would like to add. If possible these should be incorporated before the visualization. The goal
+here is to provide a customized view to the user that only shows listings that match their
+preferences.
+
+# Tasks
+
+To build a insightful visualization these are the tasks that must be completed:
+
+1. Collect data
+2. Clean and filter data
+3. Brainstorm and quickly prototype ideas
+4. Build a prototype final visualization
+5. Evaluate the visualization
+6. Refine the visualization
+7. Deploy the visualization
+
+## Data Visualization Prototypes
+
+This first prototype visualization shows all listings by gps coordinate location and colors each by
+their type.
+
+```{python}
+
+max_price = 750000
+min_price = 450000
+min_beds = 2
+min_baths = 2
+max_lot_sqft = 30000
+
+comparison_data = df[(df.price <= max_price) & (df.price >= min_price) & (df.beds >= min_beds) &
+(df.baths >= min_baths) & (df.lot_sqft < max_lot_sqft)]
+
+alt.Chart(comparison_data).mark_circle().encode(
+    x = alt.X('lng', scale=alt.Scale(domain=[-105.5, -104.5])),
+    y = alt.Y('lat', scale=alt.Scale(domain=[39.5, 40.25])),
+    color = alt.Color("home_type", scale=alt.Scale(scheme = "category10")),
+    tooltip = ["city", "price", "address"]
+).properties(
+    width=450,
+    height=350
+).interactive()
+
+```
+
+While this visualization provides a good overview of the listings by location, and does provide some
+insight to the user, it does not provide any insight on price. Lets try to compare price and square
+footage.
+
+```{python}
+alt.Chart(comparison_data).mark_circle().encode(
+    x = 'sqft',
+    y = 'price',
+    color = alt.Color("home_type", scale=alt.Scale(scheme = "category10")),
+    tooltip = ["city", "price", "address"]
+).properties(
+    width=450,
+    height=350
+).interactive()
+```
+
+This is a poor visualization that does not provide much insight. There is too much noise and not
+enough signal. It would be more valuable to remove the color labels and allow selection by city:
+
+```{python}
+dropdown = alt.binding_select(options = df['city'].unique(), name = "Select City: ")
+
+selection = alt.selection(type='single', fields=['city'], bind = dropdown, init={"city": "Denver"})
+
+alt.Chart(comparison_data).transform_filter(selection).mark_circle().encode(
+    x = alt.X('sqft', scale = alt.Scale(domain=(0, 6000))),
+    y = 'price',
+    color = alt.Color("lot_sqft", scale=alt.Scale(scheme = "blues")),
+    tooltip = ["city", "price", "address"],
+).add_selection(selection).properties(
+    width=450,
+    height=250
+).interactive()
+```
+
+```{python}
+#| echo: false
+dropdown = alt.binding_select(options = df['city'].unique(), name = "Select City: ")
+
+selection = alt.selection(type='single', fields=['city'], bind = dropdown, init={"city": "Arvada"})
+
+alt.Chart(comparison_data).transform_filter(selection).mark_circle().encode(
+    x = alt.X('sqft', scale = alt.Scale(domain=(0, 6000))),
+    y = 'price',
+    color = alt.Color("lot_sqft", scale=alt.Scale(scheme = "greens")),
+    tooltip = ["city", "price", "address"],
+).add_selection(selection).properties(
+    width=450,
+    height=250
+).interactive()
+```
+
+This seems to be a good visualization and a good technique for comparison between two cities. In
+this comparison between Denver and Arvada we can see the difference in size between cities. Listings
+in Denver tend to have a wider range of prices and sizes. We can also see the difference in the
+number of listings between the two cities. Another interesting observation is the lack of
+correlation between price and square footage in both Denver and Arvada. In testing more of the data,
+we found strong positive correlation between price and square footage in Centennial, Castle Rock,
+and Parker with more positive correlations to be found in other cities.
+
+# Visualization
+
+The following code and figure create our visualization for comparing real estate prices for
+different cities in the Denver metro area. This data represents current real estate listing price
+data for the selected city. Each chart is interactive and different cities can be
+selected by using the dropdown menu. 
+
+:::{.column-page}
+```{python}
+
+max_price = 750000
+min_price = 450000
+min_beds = 2
+min_baths = 2
+max_lot_sqft = 30000
+
+comparison_data = df[(df.price <= max_price) & (df.price >= min_price) & (df.beds >= min_beds) &
+(df.baths >= min_baths) & (df.lot_sqft < max_lot_sqft)]
+
+def real_estate_comparison_viz_row(starting_city, color_scheme, color):
+    dropdown = alt.binding_select(options = df['city'].unique(), name = "Select City: ")
+
+    selection = alt.selection(type='single', fields=['city'], bind = dropdown, init={"city":
+            starting_city})
+
+    loc = alt.Chart(comparison_data).transform_filter(selection).mark_circle().encode(
+        x = alt.X('lng', scale=alt.Scale(domain=[-105.5, -104.5])),
+        y = alt.Y('lat', scale=alt.Scale(domain=[39.5, 40.25])),
+        color = alt.Color("price", scale=alt.Scale(scheme = color_scheme)),
+        tooltip = ["city", "price", "address"]
+    ).add_selection(selection).properties(
+        width=225,
+        height=200
+    ).interactive()
+
+    ppsf = alt.Chart(comparison_data).transform_filter(selection).mark_circle().encode(
+        x = alt.X('price', title='Price ($)'),
+        y = alt.Y('sqft', title="Square Footage"),
+        color = alt.Color("price", scale=alt.Scale(scheme = color_scheme)),
+        tooltip = ["city", "price", "address"]
+    ).add_selection(selection).properties(
+        width=225,
+        height=200,
+        title = "Price vs. Square Footage"
+    ).interactive()
+
+    price_vs_tav = alt.Chart(comparison_data).transform_filter(selection).mark_circle().encode(
+        x = alt.X('price', title='Price ($)'),
+        y = alt.Y('zestimate', title="Zestimate"),
+        color = alt.Color("price", scale=alt.Scale(scheme = color_scheme)),
+        tooltip = ["city", "price", "address"]
+    ).add_selection(selection).properties(
+        width=225,
+        height=200,
+        title = "Price vs. Zestimate"
+    ).interactive()
+
+    density = alt.Chart(comparison_data).transform_filter(selection).transform_density(
+                    'price',
+                    as_ = ['price', 'density'] 
+                ).mark_area(color = color, opacity = 0.5).encode(
+        x = alt.X('price:Q', title="Price ($)"),
+        y = alt.Y('density:Q', axis=alt.Axis(labels=False), title=""),
+    ).add_selection(selection).properties(
+        width=225,
+        height=200,
+        title = "Price Density"
+    )
+
+    return ppsf | price_vs_tav | density
+
+real_estate_comparison_viz_row("Denver", "blues", "steelblue")
+```
+
+```{python}
+#| echo: false
+real_estate_comparison_viz_row("Arvada", "greens", "green")
+```
+
+```{python}
+#| echo: false
+real_estate_comparison_viz_row("Aurora", "purples", "purple")
+```
+
+
+:::
+
+## Key Elements
+
+The key elements of this visualization are the different comparisons of price across different
+cities. We chose to encode our data in these visualizations for the following reasons:
+
+* Price vs. Square Footage Scatter Plot
+    * Shows clusters of prices per city
+    * Can visualize trends between prices between diferent cities
+    * Some cities have more correlation than others
+        * This may suggest a more consistent pricing strategy, or all houses may be of relatively the same quality
+* Price vs. Zestimate Scatter Plot
+    * Shows market stability and how the prices match the estimate
+    * Typically strongly correlated, but easy to find outliers
+* Price Density Plot
+    * Allows for quickly finding the average price
+    * Shows distribution of the data
+* Grid Layout Format
+    * Allows for easy comparison across cities
+    * Different colors help to identify the different rows
+
+# Evaluation
+
+In looking at evaluating this data visualization we should first ask what problem we are trying to
+solve. As this project is small in scale, this can be classified as holistic evaluation. In prompting my designated evaluators I explained that this data if from real estate listings
+in the Denver metro are and that they were trying to find a place to live based on the price. I then
+prompted them to use the visualization and asked what problem they thought it solved. The answers
+varied, Some with technical knowledge did think that the solvable problem was to find the city with
+the lowest average price. Some without technical knowledge did not understand the visualization, and
+the underlying data they were viewing, and were not able to find a problem to solve.
+
+## Users with Technical Knowledge
+
+For the users with technical knowledge, some of the insights and knowledge gain were unexpected and
+suprising. One user was very interested in the comparison of price vs. zestimate and researched the
+listings that were outliers and speculated as to why the prices differed from the zestimates. For
+this uses it is safe to say that they were able to assess the domain problem and use the
+visualization to build knowledge and insight.
+
+## Users without Technical Knowledge
+
+For the users without technical knowledge, this visualization did not solve the domain problem, and
+in some cases actually confused the user. For these users this type of technical visualization in
+not a good fit. These types of users may be better served with a different set of choices, or a more
+photographic or hands on approach to finding value. This type of visualization, while possible, is
+out of the scope of this project. It may be possible that are few types of visualizations that show
+this type of data that would provide knowledge and insight to the not-technical user.
+
+## Areas for Improvement
+
+There are many ways to vizualize data and sometimes there are too many variables that can be changed
+at once. One way to improve this visualization would be to iterate by changing one variable at a
+time. Below are ideas for incremental improvements on the current visualization:
+
+* Allow users to customize prices and number of beds/baths
+* Add a line of best fit to each scatter plot
+* Add more rows and compare more cities
+* Organize the cities in a different way
+* Combine all data into one row of charts and keep same color scheme
+
+Another way to improve this visualization is to ignore it all together and brainstorm other
+solutions:
+
+* Build a heat map of prices by area
+    * Might be too complex
+* Classify houses by price and visualize them on a map
+    * Allow user to tune classification parameters
+* Build a visualization that allows the user to change the comparison parameters
+    * Leads to a more open ended problem that may not be solvable.
+
+
+# Conclusion
+
+This documents details necessary steps for creation of a real estate listings price data
+visualization. Initially we outline the steps necessary to collect and clean the data for further
+processing. Then we filter the data to reduce the number of data points in preparation for input
+into our data visualization library, Altair. From here we built prototype data visualizations to
+test ideas and get feedback from users. Then we built our final data visualization. For evaluation
+we presented this visualization to 3 users and asked them to try to find the city with the optimal
+pricing model. We evaluated the response of each user and summarized the findings. Them we proposed
+ways to improve the visualization to solve our original problem.
+
+Through the visualization process, the problem we are trying to solve came into focus. Initially the
+data provided an open ended problem, but working creating multiple charts was helpful to find what
+data had value, and what questions could be answered from the data. It would have been wise to set
+out with a more direct question, but this type of data has many directions that it can point.
+Ultimately we created a visualization that did provide knowledge to the intended user and provided
+insight into the data.
+
+The process of building a data visualization can be complex, there are many variables and a plethora
+of different methods to convey the information accurately and beautifully. We chose our choices to
+answer specific questions, but found that a clever user may find other ways to use a visualization.
+Finding the correct visualization can be a subjective question, but building one that provides
+insight requires knowledge of the dataset and attention to detail in the implementation. As with all
+things, working the problem one step at a time proves to be the path to the greatest insight.
+
