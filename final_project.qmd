@@ -29,6 +29,8 @@ that ultimately results in a customizable map that plots houses based on
 multiple values set by the user. This document focuses on houses in the Denver
 Colorado Metropolitan area as this is where the author currently lives.
 
+The code and data for this project can be found here: <https://github.com/simmsa/dtas_5304_final_assignment>
+
 # Data
 
 As this project is open ended, I wanted to find a data set that is relevant to one of my goals
